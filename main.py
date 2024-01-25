@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from tqdm import tqdm
 
 import torch
 from torch import nn, optim
@@ -9,6 +10,7 @@ from torch.utils.data import DataLoader
 
 import matplotlib
 import matplotlib.pyplot as plt
+
 matplotlib.use("Qt5Agg")
 
 from VQVAE import VQVAE
@@ -27,7 +29,7 @@ config = {
 }
 
 vqvae = VQVAE(config)
-optimizer = optim.Adam(vqvae.parameters(), lr=1e-3)
+optimizer = optim.Adam(vqvae.parameters(), lr=5e-4)
 
 # Load model
 if os.path.isfile(CKPT_PATH):
@@ -36,7 +38,7 @@ if os.path.isfile(CKPT_PATH):
 if torch.cuda.is_available():
     print("Using Cuda")
     vqvae = vqvae.cuda()
-    
+
 # Load data
 data = MNIST(root="Data", train=True, download=True).data
 
@@ -61,31 +63,37 @@ for ax, img in zip(axes[:, :10].flatten(), data[:100]):
 plt.pause(0.01)
 
 i = 0
-while(1):
-    print(f"batch {i}", end="\r")
-    for batch in data_loader:
-        output, vqvae_loss = vqvae(batch)
-        loss = F.mse_loss(output, batch) + config["vqvae_loss_scaler"] * vqvae_loss
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+while 1:
+    n_batches = data_loader.dataset.shape[0] // data_loader.batch_size
+    with tqdm(
+        total=n_batches,
+        desc="Training",
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}",
+        colour="green",
+    ) as pbar:
+        for batch in data_loader:
+            output, vqvae_loss = vqvae(batch)
+            loss = F.mse_loss(output, batch) + config["vqvae_loss_scaler"] * vqvae_loss
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
-        if i % 10 == 0:
-            for ax, img in zip(axes[:, :10].flatten(), batch[:100]):
-                img = img * std + mean
-                img = img.detach().cpu().squeeze().numpy()
-                img = img.clip(0, 255)
-                ax.imshow(img, cmap="gray")
-                
-                
-            for ax, img in zip(axes[:, 11:].flatten(), output[:100]):
-                img = img * std + mean
-                img = img.detach().cpu().squeeze().numpy()
-                img = img.clip(0, 255)
-                ax.imshow(img, cmap="gray")
+            if i % 100 == 0:
+                for ax, img in zip(axes[:, :10].flatten(), batch[:100]):
+                    img = img * std + mean
+                    img = img.detach().cpu().squeeze().numpy()
+                    img = img.clip(0, 255)
+                    ax.imshow(img, cmap="gray")
 
-            plt.pause(0.01)
+                for ax, img in zip(axes[:, 11:].flatten(), output[:100]):
+                    img = img * std + mean
+                    img = img.detach().cpu().squeeze().numpy()
+                    img = img.clip(0, 255)
+                    ax.imshow(img, cmap="gray")
 
-            # save model
-            torch.save(vqvae.state_dict(), CKPT_PATH)
-        i += 1
+                plt.pause(0.01)
+
+                # save model
+                torch.save(vqvae.state_dict(), CKPT_PATH)
+            i += 1
+            pbar.update(1)
