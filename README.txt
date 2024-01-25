@@ -1,0 +1,1 @@
+This repo is a generalizable implementation of a Vector Quantized Variational Auto Encoder (VQVAE)

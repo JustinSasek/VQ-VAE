@@ -6,6 +6,11 @@ from typing import Tuple, List
 
 
 class ConvBlock(nn.Module):
+    """
+    This performs n_layers of convolutions with a kernel size of 5 and a stride of 1.
+    It will also perform batch normalization and a tanh activation function.
+    It will also transform the number of channels from in_ch to out_ch.
+    """
     def __init__(self, in_ch: int, out_ch: int, n_layers: int):
         super().__init__()
         mods = []
@@ -28,6 +33,9 @@ class ConvBlock(nn.Module):
 
 
 class Encoder(nn.Module):
+    """
+    This encodes the input image into a latent space.
+    """
     def __init__(self, config: dict):
         super().__init__()
 
@@ -70,6 +78,9 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
+    """
+    This decodes the latent space into an image.
+    """
     def __init__(self, config: dict):
         super().__init__()
 
@@ -119,20 +130,19 @@ class VQVAE(nn.Module):
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.encoder(x)
 
-        # lookup
+        # Find closest codebook vector and replace x with it
         x_flat = x.view(size=(-1, self.latent_size))
         dists = torch.cdist(x_flat, self.codebook.weight, 2)
         x_vq = self.codebook(torch.argmin(dists, dim=1))
-
         x_vq = x_vq.view(size=(-1, self.latent_size, *self.config["hidden_size"]))
 
+        # Approximate x with x_vq for backprop
         x_vq = x + (x_vq - x).detach()
 
-        # find loss
-        codebook_loss = torch.mean((x_vq - x.detach()) ** 2)
-        commitment_loss = torch.mean((x_vq.detach() - x) ** 2)
-        beta = 1
-        loss = codebook_loss + beta * commitment_loss
+        # Find loss for codebook and commitment
+        codebook_loss = torch.mean((x_vq - x.detach()) ** 2) # This moves the codebook towards x
+        commitment_loss = torch.mean((x_vq.detach() - x) ** 2) # This moves x towards the codebook
+        loss = codebook_loss + self.config["commitment_loss_scaler"] * commitment_loss
 
         output = self.decoder(x_vq)
         return output, loss
